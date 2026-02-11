@@ -112,5 +112,6 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		}
 	}
 
+	router.GET("/api/node/stats", getNodeStats)
 	return router
 }
