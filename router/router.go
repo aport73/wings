@@ -42,6 +42,7 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	// These routes use signed URLs to validate access to the resource being requested.
 	router.GET("/download/backup", getDownloadBackup)
 	router.GET("/download/file", getDownloadFile)
+	router.GET("/download/stream", getDownloadStream)
 	router.POST("/upload/file", postServerUploadFiles)
 
 	// This route is special it sits above all the other requests because we are
@@ -71,14 +72,20 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	{
 		server.GET("", getServer)
 		server.DELETE("", deleteServer)
+		server.GET("/version", getInstalledVersion)
 
 		server.GET("/logs", getServerLogs)
+		server.GET("/stats/protocols", getServerProtocolStats)
 		server.POST("/power", postServerPower)
 		server.POST("/commands", postServerCommands)
 		server.POST("/install", postServerInstall)
 		server.POST("/reinstall", postServerReinstall)
 		server.POST("/sync", postServerSync)
 		server.POST("/ws/deny", postServerDenyWSTokens)
+
+		server.POST("/importer", postServerImport)
+		server.POST("/importer/selected", postServerImportSelected)
+		server.GET("/importer/progress", getServerImporterProgress)
 
 		// This archive request causes the archive to start being created
 		// this should only be triggered by the panel.
@@ -88,6 +95,7 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 		files := server.Group("/files")
 		{
 			files.GET("/contents", getServerFileContents)
+			files.GET("/search", getServerFilesSearch)
 			files.GET("/fingerprints", getServerFileFingerprints)
 			files.GET("/list-directory", getServerListDirectory)
 			files.PUT("/rename", putServerRenameFiles)
