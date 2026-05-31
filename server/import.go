@@ -3,6 +3,8 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -103,6 +105,7 @@ func (s *Server) ImportNewSelected(user, password, sshKey, sshKeyPassphrase, hos
 
 func (s *Server) executeImport(user, password, sshKey, sshKeyPassphrase, hostKeyFingerprint, host string, port int, srcLocation, dstLocation, transferType, authMethod string, selectedItems []string) error {
 	uuid := s.ID()
+	var err error
 
 	progress := &ImportProgress{
 		TotalFiles:     -1,
@@ -115,8 +118,8 @@ func (s *Server) executeImport(user, password, sshKey, sshKeyPassphrase, hostKey
 	defer func() {
 		setImportProgress(uuid, nil)
 
-		if err := s.notifyImportComplete(); err != nil {
-			s.Log().WithField("error", err).Warn("failed to notify Panel of import completion, status may need manual clearing")
+		if notifyErr := s.notifyImportComplete(err); notifyErr != nil {
+			s.Log().WithField("error", notifyErr).Warn("failed to notify Panel of import completion, status may need manual clearing")
 		} else {
 			s.Log().Debug("notified Panel to clear import status")
 		}
@@ -129,7 +132,6 @@ func (s *Server) executeImport(user, password, sshKey, sshKeyPassphrase, hostKey
 		return err
 	}
 
-	var err error
 	isSelective := len(selectedItems) > 0
 	isFTP := transferType == "ftp"
 	if authMethod == "" {
@@ -1551,14 +1553,31 @@ func walkDirFTP(client *goftp.Client, dir string, s *Server, callback func(path 
 	return nil
 }
 
-func (s *Server) notifyImportComplete() error {
+func (s *Server) notifyImportComplete(importErr error) error {
 
 	cfg := config.Get()
 	url := fmt.Sprintf("%s/api/remote/servers/%s/importer/complete",
 		strings.TrimSuffix(cfg.PanelLocation, "/"),
 		s.ID())
 
-	req, err := http.NewRequestWithContext(s.Context(), "POST", url, bytes.NewBuffer([]byte("{}")))
+	payload := map[string]interface{}{
+		"successful": importErr == nil,
+	}
+	if importErr != nil {
+		payload["error"] = importErr.Error()
+	} else {
+		payload["message"] = "Import completed successfully."
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -1575,6 +1594,11 @@ func (s *Server) notifyImportComplete() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
+		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if len(responseBody) > 0 {
+			return fmt.Errorf("panel returned status %d when clearing import status: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+		}
+
 		return fmt.Errorf("panel returned status %d when clearing import status", resp.StatusCode)
 	}
 

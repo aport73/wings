@@ -1,0 +1,22 @@
+@@ -3,6 +3,13 @@
+ import (
+ 	"bufio"
+ 	"context"
++	"crypto/md5"
++	"crypto/sha1"
++	"crypto/sha256"
++	"crypto/sha512"
++	"encoding/hex"
++	"fmt"
++	"hash/crc32"
+ 	"io"
+ 	"mime/multipart"
+ 	"net/http"
+@@ -12,6 +19,7 @@
+ 	"path/filepath"
+ 	"strconv"
+ 	"strings"
++	"sync"
+ 
+ 	"emperror.dev/errors"
+ 	"github.com/apex/log"
