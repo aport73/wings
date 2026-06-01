@@ -757,9 +757,14 @@ func betterFilesNbtNodeFromDynbt(value *dynbt.Value) betterFilesNbtNode {
 	case nbt.TagCompound:
 		children := map[string]betterFilesNbtNode{}
 		if compound := value.Compound(); compound != nil {
-			compound.Visit(func(tag string, child *dynbt.Value) {
-				children[tag] = betterFilesNbtNodeFromDynbt(child)
-			})
+			if raw, err := nbt.Marshal(value); err == nil {
+				decoded := map[string]*dynbt.Value{}
+				if err := nbt.Unmarshal(raw, &decoded); err == nil {
+					for tag, child := range decoded {
+						children[tag] = betterFilesNbtNodeFromDynbt(child)
+					}
+				}
+			}
 		}
 		return betterFilesNbtNode{Type: "compound", Children: children}
 	case nbt.TagIntArray:
