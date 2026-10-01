@@ -107,29 +107,38 @@ func (e *Environment) InSituUpdate() error {
         ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
         defer cancel()
 
-        if _, err := e.ContainerInspect(ctx); err != nil {
-                // If the container doesn't exist for some reason there really isn't anything
-                // we can do to fix that in this process (it doesn't make sense at least). In those
-                // cases just return without doing anything since we still want to save the configuration
-                // to the disk.
-                //
-                // We'll let a boot process make modifications to the container if needed at this point.
-                if client.IsErrNotFound(err) {
-                        return nil
-                }
-                return errors.Wrap(err, "environment/docker: could not inspect container")
-        }
+c, err := e.ContainerInspect(ctx)
+	if err != nil {
+		// If the container doesn't exist for some reason there really isn't anything
+		// we can do to fix that in this process (it doesn't make sense at least). In those
+		// cases just return without doing anything since we still want to save the configuration
+		// to the disk.
+		//
+		// We'll let a boot process make modifications to the container if needed at this point.
+		if client.IsErrNotFound(err) {
+			return nil
+		}
+		return errors.Wrap(err, "environment/docker: could not inspect container")
+	}
 
-        // CPU pinning cannot be removed once it is applied to a container. The same is true
-        // for removing memory limits, a container must be re-created.
-        //
-        // @see https://github.com/moby/moby/issues/41946
-        if _, err := e.client.ContainerUpdate(ctx, e.Id, container.UpdateConfig{
-                Resources: e.Configuration.Limits().AsContainerResources(),
-        }); err != nil {
-                return errors.Wrap(err, "environment/docker: could not update container")
-        }
-        return nil
+	// The kernel rejects a CFS quota lower than the current burst, so remove the
+	// burst before updating the limits and re-apply it afterwards.
+	if c.State != nil {
+		e.clearCpuBurst(c.State.Pid)
+	}
+
+	// CPU pinning cannot be removed once it is applied to a container. The same is true
+	// for removing memory limits, a container must be re-created.
+	//
+	// @see https://github.com/moby/moby/issues/41946
+	if _, err := e.client.ContainerUpdate(ctx, e.Id, container.UpdateConfig{
+		Resources: e.Configuration.Limits().AsContainerResources(),
+	}); err != nil {
+		return errors.Wrap(err, "environment/docker: could not update container")
+	}
+
+	e.applyCpuBurst(ctx)
+	return nil
 }
 
 // Create creates a new container for the server using all the data that is
